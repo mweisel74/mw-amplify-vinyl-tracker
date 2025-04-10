@@ -87,7 +87,18 @@ export default function App() {
                 labelHidden
                 variation="quiet"
                 required
-              />
+                hasError={false}
+                 errorMessage="There's no need to add a $, I got you covered"
+                 onChange={(e) => {
+                    const value = e.target.value;
+                    if (value.includes('$')) {
+                      e.target.value = value.replace('$', '');
+                      e.target.setCustomValidity("There's no need to add a $, I got you covered");
+                  } else {
+                e.target.setCustomValidity('');
+                  }
+                }}
+/>
 
               <Button type="submit" variation="primary">
                 Add Record
