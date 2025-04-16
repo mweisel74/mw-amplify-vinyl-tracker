@@ -1,3 +1,4 @@
+import logo from './assets/cdwl-logo.png';
 import { useState, useEffect } from "react";
 import {
   Authenticator,
@@ -9,9 +10,11 @@ import {
   View,
   Grid,
   Divider,
+  Image,
 } from "@aws-amplify/ui-react";
 import { Amplify } from "aws-amplify";
 import "@aws-amplify/ui-react/styles.css";
+import "./App.css";
 import { generateClient } from "aws-amplify/data";
 import outputs from "../amplify_outputs.json";
 /**
@@ -24,36 +27,59 @@ const client = generateClient({
 });
 
 export default function App() {
-  const [expenses, setExpenses] = useState([]);
+  const [albumTitles, setAlbumTitles] = useState([]);
 
   useEffect(() => {
-    client.models.Expense.observeQuery().subscribe({
-      next: (data) => setExpenses([...data.items]),
+    client.models.AlbumTitle.observeQuery().subscribe({
+      next: (data) => setAlbumTitles([...data.items]),
     });
   }, []);
 
-  async function createExpense(event) {
+  async function createAlbumTitle(event) {
     event.preventDefault();
     const form = new FormData(event.target);
-
-    await client.models.Expense.create({
-      name: form.get("name"),
-      amount: form.get("amount"),
-    });
-
-    event.target.reset();
+  
+    try {
+      await client.models.AlbumTitle.create({
+        name: form.get("name"),
+        title: form.get("title")  // No need for toString() since it's already a string
+      });
+  
+      event.target.reset();
+    } catch (error) {
+      console.error('Error creating albumTitle:', error);
+    }
   }
 
-  async function deleteExpense({ id }) {
-    const toBeDeletedExpense = {
+  async function deleteAlbumTitle({ id }) {
+    const toBeDeletedAlbumTitle = {
       id,
     };
 
-    await client.models.Expense.delete(toBeDeletedExpense);
+    await client.models.AlbumTitle.delete(toBeDeletedAlbumTitle);
   }
 
   return (
-    <Authenticator>
+<Authenticator
+  components={{
+    Header: () => (
+      <Flex
+        direction="column"
+        justifyContent="center"
+        alignItems="center"
+        padding="1rem"
+      >
+        <Image
+          src={logo}
+          alt="The Crate Digger's Wishlist"
+          width="200px"
+          height="194px"
+          marginBottom="1rem"
+        />
+      </Flex>
+    ),
+  }}
+>
       {({ signOut }) => (
         <Flex
           className="App"
@@ -63,8 +89,8 @@ export default function App() {
           width="70%"
           margin="0 auto"
         >
-          <Heading level={1}>Michael's Vinyl Record Tracker</Heading>
-          <View as="form" margin="3rem 0" onSubmit={createExpense}>
+          <img src={logo} className="logo" alt="The Crate Digger's Wishlist" width="500" height="486" />
+          <View as="form" margin="3rem 0" onSubmit={createAlbumTitle}>
             <Flex
               direction="column"
               justifyContent="center"
@@ -73,32 +99,21 @@ export default function App() {
             >
               <TextField
                 name="name"
-                placeholder="Record Name"
-                label="Record Name"
+                placeholder="Artist/Band Name"
+                label="Artist/Band Name"
                 labelHidden
                 variation="quiet"
                 required
               />
               <TextField
-                name="amount"
-                placeholder="Record Cost"
-                label="Record Cost"
-                type="float"
+                name="title"
+                placeholder="Album Title"
+                label="Album Title"
                 labelHidden
                 variation="quiet"
                 required
-                hasError={false}
-                 errorMessage="There's no need to add a $, I got you covered"
-                 onChange={(e) => {
-                    const value = e.target.value;
-                    if (value.includes('$')) {
-                      e.target.value = value.replace('$', '');
-                      e.target.setCustomValidity("There's no need to add a $, I got you covered");
-                  } else {
-                e.target.setCustomValidity('');
-                  }
-                }}
-/>
+                type="text"
+              />
 
               <Button type="submit" variation="primary">
                 Add Record
@@ -106,7 +121,7 @@ export default function App() {
             </Flex>
           </View>
           <Divider />
-          <Heading level={2}>My Record Collection</Heading>
+          <Heading level={2}>My Vinyl Wishlist</Heading>
           <Grid
             margin="3rem 0"
             autoFlow="column"
@@ -114,9 +129,9 @@ export default function App() {
             gap="2rem"
             alignContent="center"
           >
-            {expenses.map((expense) => (
+            {albumTitles.map((albumTitle) => (
               <Flex
-                key={expense.id || expense.name}
+                key={albumTitle.id || albumTitle.name}
                 direction="column"
                 justifyContent="center"
                 alignItems="center"
@@ -127,13 +142,13 @@ export default function App() {
                 className="box"
               >
                 <View>
-                  <Heading level="3">{expense.name}</Heading>
+                  <Heading level="3">{albumTitle.name}</Heading>
                 </View>
-                <Text fontStyle="italic">${expense.amount}</Text>
+                <Text fontStyle="italic">{albumTitle.title}</Text>
 
                 <Button
                   variation="destructive"
-                  onClick={() => deleteExpense(expense)}
+                  onClick={() => deleteAlbumTitle(albumTitle)}
                 >
                   Delete Record
                 </Button>

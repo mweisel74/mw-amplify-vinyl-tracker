@@ -6,7 +6,8 @@
 }
 
 .logo {
-  height: 6em;
+  width: 200px;
+  height: 194px;
   padding: 1.5em;
   will-change: filter;
   transition: filter 300ms;
@@ -39,4 +40,20 @@
 
 .read-the-docs {
   color: #888;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--primary {
+  background-color: #00CFFD !important;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--primary:hover {
+  background-color: #00CFFD !important;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--destructive {
+  background-color: #FF2DCB !important;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--destructive:hover {
+  background-color: #FF2DCB !important;
 }

@@ -7,10 +7,10 @@ and "delete" any "Todo" records.
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 
 const schema = a.schema({
-  Expense: a
+  AlbumTitle: a    // Changed from Expense to AlbumTitle
     .model({
-      name:a.string(),
-      amount: a.float(),
+      name:a.string(), // Artist/Band Name
+      title: a.string(), // Album/Title - Changed from 'amount' to 'title' to be more semantic
     })
     .authorization((allow) => [allow.owner()]),
 });
