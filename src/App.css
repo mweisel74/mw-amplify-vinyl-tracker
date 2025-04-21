@@ -9,6 +9,7 @@
   margin: 0 auto;
   display: flex;
   justify-content: center;
+  min-height: 100vh;
 }
 
 @media (max-width: 768px) {
@@ -30,9 +31,11 @@
   will-change: filter;
   transition: filter 300ms;
 }
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
 }
+
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
@@ -86,4 +89,20 @@ table {
 
 .amplify-button.amplify-field-group__control.amplify-button--destructive:hover {
   background-color: #FF2DCB !important;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--link {
+  background-color: #00CFFD !important;
+  color: white !important;
+}
+
+.amplify-button.amplify-field-group__control.amplify-button--link:hover {
+  background-color: #00CFFD !important;
+  color: white !important;
+}
+
+body {
+  background-color: #f5f5f5;
+  margin: 0;
+  padding: 0;
 }
