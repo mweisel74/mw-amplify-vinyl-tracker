@@ -27,11 +27,23 @@ export default function App() {
   const [viewMode, setViewMode] = useState('card');
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
-const [editForm, setEditForm] = useState({
-  name: '',
-  title: '',
-  notes: ''
-});
+  const [isImporting, setIsImporting] = useState(false);
+  const [bulkDeleteMode, setBulkDeleteMode] = useState(false);  // Make sure this is here
+  const [selectedItems, setSelectedItems] = useState([]); // And this
+  const [editForm, setEditForm] = useState({
+    name: '',
+    title: '',
+    notes: ''
+  });
+  
+   // Add the toggleItemSelection function here
+   const toggleItemSelection = (id) => {
+    setSelectedItems(prev => 
+      prev.includes(id) 
+        ? prev.filter(item => item !== id) 
+        : [...prev, id]
+    );
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -113,6 +125,150 @@ async function handleEdit(albumTitle) {
     notes: albumTitle.notes || ''
   });
 }
+
+  //Adding bulk delete functionality
+const handleBulkDelete = async () => {
+  if (selectedItems.length === 0) {
+    alert('Please select items to delete');
+    return;
+  }
+
+  const confirmDelete = window.confirm(
+    `Warning: You are about to delete ${selectedItems.length} record(s). This action is irreversible. Do you want to continue?`
+  );
+
+  if (confirmDelete) {
+    setIsLoading(true);
+    try {
+      // Create an array of promises for all deletions
+      const deletePromises = selectedItems.map(id => 
+        client.models.AlbumTitle.delete({ id })
+      );
+
+      // Wait for all deletions to complete
+      await Promise.all(deletePromises);
+
+      // Update local state after all deletions are complete
+      setAlbumTitles(prevTitles => 
+        prevTitles.filter(title => !selectedItems.includes(title.id))
+      );
+      
+      setSelectedItems([]); // Clear selections
+      setBulkDeleteMode(false); // Exit bulk delete mode
+      
+      // Force a refresh of the albumTitles state
+      const result = await client.models.AlbumTitle.list();
+      setAlbumTitles(result.items);
+      
+    } catch (error) {
+      console.error('Error during bulk delete:', error);
+      alert('Some items could not be deleted. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+};
+
+
+
+  //Adding import functionality
+const handleCSVImport = async (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    setIsImporting(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const text = e.target.result;
+        const rows = text.split('\n');
+        
+        // Validate CSV structure
+        if (rows.length < 2) {
+          alert('CSV file appears to be empty or invalid');
+          setIsImporting(false);
+          return;
+        }
+
+        const headers = rows[0].toLowerCase().split(',');
+        if (!headers.includes('name') || !headers.includes('title')) {
+          alert('Your CSV must include column headers for "name,title,notes"');
+          setIsImporting(false);
+          return;
+        }
+
+        const records = rows
+          .slice(1)
+          .filter(row => row.trim()) // Skip empty rows
+          .map((row, index) => {
+            const values = row.split(',');
+            return {
+              rowNumber: index + 2, // +2 because we start after header and want 1-based indexing
+              name: values[headers.indexOf('name')]?.trim(),
+              title: values[headers.indexOf('title')]?.trim(),
+              notes: values[headers.indexOf('notes')]?.trim() || null
+            };
+          });
+
+        const validRecords = records.filter(record => record.name && record.title);
+        const invalidRecords = records.filter(record => !record.name || !record.title);
+
+        // Add valid records to the database
+        let successCount = 0;
+        for (const record of validRecords) {
+          try {
+            await client.models.AlbumTitle.create({
+              name: record.name,
+              title: record.title,
+              notes: record.notes
+            });
+            successCount++;
+          } catch (error) {
+            console.error('Error saving record:', error);
+            invalidRecords.push({ ...record, error: 'Database error' });
+          }
+        }
+
+        // Prepare error message for invalid records
+        let errorMessage = '';
+        if (invalidRecords.length > 0) {
+          errorMessage = 'The following records were not imported due to missing required fields:\n\n';
+          invalidRecords.forEach(record => {
+            errorMessage += `Row ${record.rowNumber}: `;
+            if (!record.name) errorMessage += '[Missing Artist Name] ';
+            if (!record.title) errorMessage += '[Missing Album Title] ';
+            if (record.error) errorMessage += `[${record.error}] `;
+            errorMessage += '\n';
+          });
+        }
+
+        // Show results
+        const message = `Import Results:\n\n` +
+          `Successfully imported: ${successCount} records\n` +
+          `Failed to import: ${invalidRecords.length} records\n\n` +
+          `${errorMessage}`;
+
+        alert(message);
+
+      } catch (error) {
+        console.error('Error processing CSV:', error);
+        alert('Error processing CSV file');
+      } finally {
+        setIsImporting(false);
+        event.target.value = ''; // Reset file input
+      }
+    };
+
+    reader.onerror = () => {
+      alert('Error reading file');
+      setIsImporting(false);
+    };
+
+    reader.readAsText(file);
+  }
+};
+
+
 
 async function handleSave(id) {
   setIsLoading(true);
@@ -245,12 +401,54 @@ function handleCancel() {
             <Divider />
             <Flex direction="row" alignItems="center" gap="1rem">
               <Heading level={2}>My Vinyl Wishlist</Heading>
-              <Button
-                onClick={() => setViewMode(viewMode === 'card' ? 'table' : 'card')}
-                variation="link"
-              >
-                Switch to {viewMode === 'card' ? 'Table' : 'Card'} View
-              </Button>
+              <>
+                <Button
+                  onClick={() => setViewMode(viewMode === 'card' ? 'table' : 'card')}
+                  variation="link"
+                >
+                  Switch to {viewMode === 'card' ? 'Table' : 'Card'} View
+                </Button>
+                
+                <label htmlFor="csvInput" style={{ margin: 0 }}>
+                  <Button
+                    variation="link"
+                    onClick={() => document.getElementById('csvInput').click()}
+                    isLoading={isImporting}
+                  >
+                    {isImporting ? 'Importing...' : 'Import CSV'}
+                  </Button>
+                </label>
+                <input
+                  id="csvInput"
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCSVImport}
+                  style={{ display: 'none' }}
+                />
+              
+                <Button
+                  variation="link"
+                  onClick={() => {
+                    setBulkDeleteMode(!bulkDeleteMode);
+                    setSelectedItems([]); // Clear selections when toggling mode
+                  }}
+                >
+                  {bulkDeleteMode ? 'Cancel Bulk Delete' : 'Bulk Delete'}
+                </Button>
+              
+                {bulkDeleteMode && selectedItems.length > 0 && (
+                  <Button
+                    variation="destructive"
+                    onClick={handleBulkDelete}
+                  >
+                    Delete Selected ({selectedItems.length})
+                  </Button>
+                )}
+              </>
+              
+              
+              
+              
             </Flex>
 
             {isLoading ? (
@@ -270,7 +468,7 @@ function handleCancel() {
                     <Flex
                       key={albumTitle.id || albumTitle.name}
                       direction="column"
-                      justifyContent="space-between" // This helps maintain consistent spacing
+                      justifyContent="space-between"
                       alignItems="center"
                       gap="1rem"
                       border="1px solid #ccc"
@@ -278,10 +476,20 @@ function handleCancel() {
                       borderRadius="5%"
                       className="box"
                       style={{
-                        minHeight: '300px', // Set a minimum height for consistency
-                        width: '250px',     // Set a fixed width for uniformity
+                        minHeight: '300px',
+                        width: '250px',
                       }}
                     >
+                      {bulkDeleteMode && (
+                        <View style={{ alignSelf: 'flex-start' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.includes(albumTitle.id)}
+                            onChange={() => toggleItemSelection(albumTitle.id)}
+                          />
+                        </View>
+                      )}
+                    
                       {/* Top section with name */}
                       <View style={{ width: '100%' }}>
                         {editingId === albumTitle.id ? (
@@ -375,106 +583,121 @@ function handleCancel() {
                 
                 
               </Grid>
-            ) : (
-              <View width="100%" margin="3rem 0">
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {albumTitles && albumTitles.length > 0 ? (
-                      albumTitles.map((albumTitle) => (
-                        <tr key={albumTitle.id || albumTitle.name}>
-                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
-                            {editingId === albumTitle.id ? (
-                              <TextField
-                                value={editForm.name}
-                                onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="Artist/Band Name"
-                                variation="quiet"
-                                required
-                              />
-                            ) : (
-                              albumTitle.name
+              ) : (
+                <View width="100%" margin="3rem 0">
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        {bulkDeleteMode && (
+                          <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
+                            Select
+                          </th>
+                        )}
+                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
+                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
+                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
+                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {albumTitles && albumTitles.length > 0 ? (
+                        albumTitles.map((albumTitle) => (
+                          <tr key={albumTitle.id || albumTitle.name}>
+                            {bulkDeleteMode && (
+                              <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedItems.includes(albumTitle.id)}
+                                  onChange={() => toggleItemSelection(albumTitle.id)}
+                                />
+                              </td>
                             )}
-                          </td>
-                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', fontStyle: 'italic', textAlign: 'left' }}>
-                            {editingId === albumTitle.id ? (
-                              <TextField
-                                value={editForm.title}
-                                onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
-                                placeholder="Album Title"
-                                variation="quiet"
-                                required
-                              />
-                            ) : (
-                              albumTitle.title
-                            )}
-                          </td>
-                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
-                            {editingId === albumTitle.id ? (
-                              <TextField
-                                value={editForm.notes}
-                                onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
-                                placeholder="Notes"
-                                variation="quiet"
-                              />
-                            ) : (
-                              albumTitle.notes
-                            )}
-                          </td>
-                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
-                            {editingId === albumTitle.id ? (
-                              <Flex direction="row" gap="1rem" justifyContent="center">
-                                <Button
-                                  variation="primary"
-                                  onClick={() => handleSave(albumTitle.id)}
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  variation="link"
-                                  onClick={handleCancel}
-                                >
-                                  Cancel
-                                </Button>
-                              </Flex>
-                            ) : (
-                              <Flex direction="row" gap="1rem" justifyContent="center">
-                                <Button
-                                  variation="link"
-                                  onClick={() => handleEdit(albumTitle)}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variation="destructive"
-                                  onClick={() => deleteAlbumTitle(albumTitle)}
-                                >
-                                  Delete
-                                </Button>
-                              </Flex>
-                            )}
+                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                              {editingId === albumTitle.id ? (
+                                <TextField
+                                  value={editForm.name}
+                                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                  placeholder="Artist/Band Name"
+                                  variation="quiet"
+                                  required
+                                />
+                              ) : (
+                                albumTitle.name
+                              )}
+                            </td>
+                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', fontStyle: 'italic', textAlign: 'left' }}>
+                              {editingId === albumTitle.id ? (
+                                <TextField
+                                  value={editForm.title}
+                                  onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                                  placeholder="Album Title"
+                                  variation="quiet"
+                                  required
+                                />
+                              ) : (
+                                albumTitle.title
+                              )}
+                            </td>
+                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                              {editingId === albumTitle.id ? (
+                                <TextField
+                                  value={editForm.notes}
+                                  onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                                  placeholder="Notes"
+                                  variation="quiet"
+                                />
+                              ) : (
+                                albumTitle.notes
+                              )}
+                            </td>
+                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
+                              {editingId === albumTitle.id ? (
+                                <Flex direction="row" gap="1rem" justifyContent="center">
+                                  <Button
+                                    variation="primary"
+                                    onClick={() => handleSave(albumTitle.id)}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    variation="link"
+                                    onClick={handleCancel}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </Flex>
+                              ) : (
+                                <Flex direction="row" gap="1rem" justifyContent="center">
+                                  <Button
+                                    variation="link"
+                                    onClick={() => handleEdit(albumTitle)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variation="destructive"
+                                    onClick={() => deleteAlbumTitle(albumTitle)}
+                                  >
+                                    Delete
+                                  </Button>
+                                </Flex>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={bulkDeleteMode ? "5" : "4"} style={{ textAlign: 'center', padding: '1rem' }}>
+                            No records found
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', padding: '1rem' }}>
-                          No records found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                  
-                </table>
-              </View>
-            )}
+                      )}
+                    </tbody>
+                  </table>
+                </View>
+              )
+              
+            }
             <Button 
               onClick={signOut} 
               style={{ width: 'fit-content', alignSelf: 'center' }}
