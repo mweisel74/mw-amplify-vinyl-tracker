@@ -1,3 +1,5 @@
+//SECTION 1 - Imports and Initial Setup
+
 import logo from './assets/cdwl-logo.png';
 import { useState, useEffect } from "react";
 import {
@@ -22,28 +24,31 @@ const client = generateClient({
   authMode: "userPool",
 });
 
+//SECTION 2 - Component Start and State Declarations:
+
 export default function App() {
   const [albumTitles, setAlbumTitles] = useState([]);
   const [viewMode, setViewMode] = useState('card');
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [bulkDeleteMode, setBulkDeleteMode] = useState(false);  // Make sure this is here
-  const [selectedItems, setSelectedItems] = useState([]); // And this
+  const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState([]);
   const [editForm, setEditForm] = useState({
     name: '',
     title: '',
     notes: ''
   });
-  
-   // Add the toggleItemSelection function here
-   const toggleItemSelection = (id) => {
+
+  const toggleItemSelection = (id) => {
     setSelectedItems(prev => 
       prev.includes(id) 
         ? prev.filter(item => item !== id) 
         : [...prev, id]
     );
   };
+
+//SECTION 3 - Core Functions (Part 1):
 
   useEffect(() => {
     let isMounted = true;
@@ -65,17 +70,17 @@ export default function App() {
     };
     
     fetchInitialData();
-  
+
     const sub = client.models.AlbumTitle.observeQuery().subscribe({
       next: ({ items }) => {
         if (isMounted) {
           console.log('Subscription update received:', items);
-          setAlbumTitles(items);
+          setAlbumTitles(items || []);
         }
       },
       error: (error) => console.error('Subscription error:', error)
     });
-  
+
     return () => {
       isMounted = false;
       sub.unsubscribe();
@@ -104,6 +109,45 @@ export default function App() {
     }
   }
 
+//SECTION 4 - Core Functions (Part 2):
+
+  const handleBulkDelete = async () => {
+      if (selectedItems.length === 0) {
+        alert('Please select items to delete');
+        return;
+      }
+  
+      const confirmDelete = window.confirm(
+        `Warning: You are about to delete ${selectedItems.length} record(s). This action is irreversible. Do you want to continue?`
+      );
+  
+      if (confirmDelete) {
+        setIsLoading(true);
+        try {
+          // Delete all selected items
+          await Promise.all(
+            selectedItems.map(id => client.models.AlbumTitle.delete({ id }))
+          );
+          
+          // Update local state by filtering out deleted items
+          setAlbumTitles(prevTitles => 
+            prevTitles.filter(title => !selectedItems.includes(title.id))
+          );
+          
+          // Reset selection state
+          setSelectedItems([]);
+          setBulkDeleteMode(false);
+  
+        } catch (error) {
+          console.error('Error during bulk delete:', error);
+          alert('Some items could not be deleted. Please try again.');
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+  
+
   async function deleteAlbumTitle({ id }) {
     try {
       setIsLoading(true);
@@ -116,188 +160,139 @@ export default function App() {
     }
   }
 
-  // Adding edit functionality
-async function handleEdit(albumTitle) {
-  setEditingId(albumTitle.id);
-  setEditForm({
-    name: albumTitle.name,
-    title: albumTitle.title,
-    notes: albumTitle.notes || ''
-  });
-}
+//SECTION 5 - Edit/Save Functions and CSV Import:
 
-  //Adding bulk delete functionality
-const handleBulkDelete = async () => {
-  if (selectedItems.length === 0) {
-    alert('Please select items to delete');
-    return;
-  }
-
-  const confirmDelete = window.confirm(
-    `Warning: You are about to delete ${selectedItems.length} record(s). This action is irreversible. Do you want to continue?`
-  );
-
-  if (confirmDelete) {
+  async function handleSave(id) {
     setIsLoading(true);
     try {
-      // Create an array of promises for all deletions
-      const deletePromises = selectedItems.map(id => 
-        client.models.AlbumTitle.delete({ id })
+      const updatedAlbum = await client.models.AlbumTitle.update({
+        id,
+        name: editForm.name,
+        title: editForm.title,
+        notes: editForm.notes || null
+      });
+      
+      setAlbumTitles(prevTitles =>
+        prevTitles.map(title =>
+          title.id === id ? updatedAlbum : title
+        )
       );
-
-      // Wait for all deletions to complete
-      await Promise.all(deletePromises);
-
-      // Update local state after all deletions are complete
-      setAlbumTitles(prevTitles => 
-        prevTitles.filter(title => !selectedItems.includes(title.id))
-      );
-      
-      setSelectedItems([]); // Clear selections
-      setBulkDeleteMode(false); // Exit bulk delete mode
-      
-      // Force a refresh of the albumTitles state
-      const result = await client.models.AlbumTitle.list();
-      setAlbumTitles(result.items);
-      
+      setEditingId(null);
+      setEditForm({ name: '', title: '', notes: '' });
     } catch (error) {
-      console.error('Error during bulk delete:', error);
-      alert('Some items could not be deleted. Please try again.');
+      console.error('Error updating album:', error);
     } finally {
       setIsLoading(false);
     }
   }
-};
 
-
-
-  //Adding import functionality
-const handleCSVImport = async (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    setIsImporting(true);
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-      try {
-        const text = e.target.result;
-        const rows = text.split('\n');
-        
-        // Validate CSV structure
-        if (rows.length < 2) {
-          alert('CSV file appears to be empty or invalid');
-          setIsImporting(false);
-          return;
-        }
-
-        const headers = rows[0].toLowerCase().split(',');
-        if (!headers.includes('name') || !headers.includes('title')) {
-          alert('Your CSV must include column headers for "name,title,notes"');
-          setIsImporting(false);
-          return;
-        }
-
-        const records = rows
-          .slice(1)
-          .filter(row => row.trim()) // Skip empty rows
-          .map((row, index) => {
-            const values = row.split(',');
-            return {
-              rowNumber: index + 2, // +2 because we start after header and want 1-based indexing
-              name: values[headers.indexOf('name')]?.trim(),
-              title: values[headers.indexOf('title')]?.trim(),
-              notes: values[headers.indexOf('notes')]?.trim() || null
-            };
-          });
-
-        const validRecords = records.filter(record => record.name && record.title);
-        const invalidRecords = records.filter(record => !record.name || !record.title);
-
-        // Add valid records to the database
-        let successCount = 0;
-        for (const record of validRecords) {
-          try {
-            await client.models.AlbumTitle.create({
-              name: record.name,
-              title: record.title,
-              notes: record.notes
-            });
-            successCount++;
-          } catch (error) {
-            console.error('Error saving record:', error);
-            invalidRecords.push({ ...record, error: 'Database error' });
-          }
-        }
-
-        // Prepare error message for invalid records
-        let errorMessage = '';
-        if (invalidRecords.length > 0) {
-          errorMessage = 'The following records were not imported due to missing required fields:\n\n';
-          invalidRecords.forEach(record => {
-            errorMessage += `Row ${record.rowNumber}: `;
-            if (!record.name) errorMessage += '[Missing Artist Name] ';
-            if (!record.title) errorMessage += '[Missing Album Title] ';
-            if (record.error) errorMessage += `[${record.error}] `;
-            errorMessage += '\n';
-          });
-        }
-
-        // Show results
-        const message = `Import Results:\n\n` +
-          `Successfully imported: ${successCount} records\n` +
-          `Failed to import: ${invalidRecords.length} records\n\n` +
-          `${errorMessage}`;
-
-        alert(message);
-
-      } catch (error) {
-        console.error('Error processing CSV:', error);
-        alert('Error processing CSV file');
-      } finally {
-        setIsImporting(false);
-        event.target.value = ''; // Reset file input
-      }
-    };
-
-    reader.onerror = () => {
-      alert('Error reading file');
-      setIsImporting(false);
-    };
-
-    reader.readAsText(file);
-  }
-};
-
-
-
-async function handleSave(id) {
-  setIsLoading(true);
-  try {
-    const updatedAlbum = await client.models.AlbumTitle.update({
-      id,
-      name: editForm.name,
-      title: editForm.title,
-      notes: editForm.notes || null
+  function handleEdit(albumTitle) {
+    setEditingId(albumTitle.id);
+    setEditForm({
+      name: albumTitle.name,
+      title: albumTitle.title,
+      notes: albumTitle.notes || ''
     });
-    
-    setAlbumTitles(prevTitles =>
-      prevTitles.map(title =>
-        title.id === id ? updatedAlbum : title
-      )
-    );
+  }
+
+  function handleCancel() {
     setEditingId(null);
     setEditForm({ name: '', title: '', notes: '' });
-  } catch (error) {
-    console.error('Error updating album:', error);
-  } finally {
-    setIsLoading(false);
   }
-}
 
-function handleCancel() {
-  setEditingId(null);
-  setEditForm({ name: '', title: '', notes: '' });
-}
+  const handleCSVImport = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setIsImporting(true);
+      const reader = new FileReader();
+      
+      reader.onload = async (e) => {
+        try {
+          const text = e.target.result;
+          const rows = text.split('\n');
+          
+          if (rows.length < 2) {
+            alert('CSV file appears to be empty or invalid');
+            setIsImporting(false);
+            return;
+          }
+
+          const headers = rows[0].toLowerCase().split(',');
+          if (!headers.includes('name') || !headers.includes('title')) {
+            alert('Your CSV must include column headers for "name,title,notes"');
+            setIsImporting(false);
+            return;
+          }
+
+          const records = rows
+            .slice(1)
+            .filter(row => row.trim())
+            .map((row, index) => {
+              const values = row.split(',');
+              return {
+                rowNumber: index + 2,
+                name: values[headers.indexOf('name')]?.trim(),
+                title: values[headers.indexOf('title')]?.trim(),
+                notes: values[headers.indexOf('notes')]?.trim() || null
+              };
+            });
+
+          const validRecords = records.filter(record => record.name && record.title);
+          const invalidRecords = records.filter(record => !record.name || !record.title);
+
+          let successCount = 0;
+          for (const record of validRecords) {
+            try {
+              await client.models.AlbumTitle.create({
+                name: record.name,
+                title: record.title,
+                notes: record.notes
+              });
+              successCount++;
+            } catch (error) {
+              console.error('Error saving record:', error);
+              invalidRecords.push({ ...record, error: 'Database error' });
+            }
+          }
+
+          let errorMessage = '';
+          if (invalidRecords.length > 0) {
+            errorMessage = 'The following records were not imported due to missing required fields:\n\n';
+            invalidRecords.forEach(record => {
+              errorMessage += `Row ${record.rowNumber}: `;
+              if (!record.name) errorMessage += '[Missing Artist Name] ';
+              if (!record.title) errorMessage += '[Missing Album Title] ';
+              if (record.error) errorMessage += `[${record.error}] `;
+              errorMessage += '\n';
+            });
+          }
+
+          const message = `Import Results:\n\n` +
+            `Successfully imported: ${successCount} records\n` +
+            `Failed to import: ${invalidRecords.length} records\n\n` +
+            `${errorMessage}`;
+
+          alert(message);
+
+        } catch (error) {
+          console.error('Error processing CSV:', error);
+          alert('Error processing CSV file');
+        } finally {
+          setIsImporting(false);
+          event.target.value = '';
+        }
+      };
+
+      reader.onerror = () => {
+        alert('Error reading file');
+        setIsImporting(false);
+      };
+
+      reader.readAsText(file);
+    }
+  };
+
+//SECTION 6 and 7 - Beginning of Return/JSX (Part 1 and 2):
 
   return (
     <Authenticator
@@ -445,10 +440,6 @@ function handleCancel() {
                   </Button>
                 )}
               </>
-              
-              
-              
-              
             </Flex>
 
             {isLoading ? (
@@ -456,13 +447,15 @@ function handleCancel() {
                 Loading...
               </View>
             ) : viewMode === 'card' ? (
+
+//SECTION 8 - Return/JSX (Part 3 - Card View):
+
               <Grid
                 margin="3rem 0"
                 templateColumns="repeat(auto-fill, minmax(250px, 1fr))"
                 gap="2rem"
                 justifyContent="center"
               >
-              
                 {albumTitles && albumTitles.length > 0 ? (
                   albumTitles.map((albumTitle) => (
                     <Flex
@@ -527,7 +520,7 @@ function handleCancel() {
                             variation="quiet"
                           />
                         ) : (
-                          <Text fontSize="small">{albumTitle.notes || " "}</Text> // Add empty space if no notes
+                          <Text fontSize="small">{albumTitle.notes || " "}</Text>
                         )}
                       </Flex>
                 
@@ -538,7 +531,7 @@ function handleCancel() {
                         style={{
                           width: '100%',
                           justifyContent: 'center',
-                          marginTop: 'auto' // Pushes buttons to bottom
+                          marginTop: 'auto'
                         }}
                       >
                         {editingId === albumTitle.id ? (
@@ -580,124 +573,126 @@ function handleCancel() {
                     No records found
                   </View>
                 )}
-                
-                
               </Grid>
-              ) : (
-                <View width="100%" margin="3rem 0">
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        {bulkDeleteMode && (
-                          <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
-                            Select
-                          </th>
-                        )}
-                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
-                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
-                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
-                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {albumTitles && albumTitles.length > 0 ? (
-                        albumTitles.map((albumTitle) => (
-                          <tr key={albumTitle.id || albumTitle.name}>
-                            {bulkDeleteMode && (
-                              <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedItems.includes(albumTitle.id)}
-                                  onChange={() => toggleItemSelection(albumTitle.id)}
-                                />
-                              </td>
-                            )}
-                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
-                              {editingId === albumTitle.id ? (
-                                <TextField
-                                  value={editForm.name}
-                                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                                  placeholder="Artist/Band Name"
-                                  variation="quiet"
-                                  required
-                                />
-                              ) : (
-                                albumTitle.name
-                              )}
-                            </td>
-                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', fontStyle: 'italic', textAlign: 'left' }}>
-                              {editingId === albumTitle.id ? (
-                                <TextField
-                                  value={editForm.title}
-                                  onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
-                                  placeholder="Album Title"
-                                  variation="quiet"
-                                  required
-                                />
-                              ) : (
-                                albumTitle.title
-                              )}
-                            </td>
-                            <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
-                              {editingId === albumTitle.id ? (
-                                <TextField
-                                  value={editForm.notes}
-                                  onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
-                                  placeholder="Notes"
-                                  variation="quiet"
-                                />
-                              ) : (
-                                albumTitle.notes
-                              )}
-                            </td>
+            ) : (
+
+//SECTION 9 - Return/JSX (Part 4 - Table View):
+
+              <View width="100%" margin="3rem 0">
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {bulkDeleteMode && (
+                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
+                          Select
+                        </th>
+                      )}
+                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
+                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
+                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
+                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {albumTitles && albumTitles.length > 0 ? (
+                      albumTitles.map((albumTitle) => (
+                        <tr key={albumTitle.id || albumTitle.name}>
+                          {bulkDeleteMode && (
                             <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
-                              {editingId === albumTitle.id ? (
-                                <Flex direction="row" gap="1rem" justifyContent="center">
-                                  <Button
-                                    variation="primary"
-                                    onClick={() => handleSave(albumTitle.id)}
-                                  >
-                                    Save
-                                  </Button>
-                                  <Button
-                                    variation="link"
-                                    onClick={handleCancel}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </Flex>
-                              ) : (
-                                <Flex direction="row" gap="1rem" justifyContent="center">
-                                  <Button
-                                    variation="link"
-                                    onClick={() => handleEdit(albumTitle)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    variation="destructive"
-                                    onClick={() => deleteAlbumTitle(albumTitle)}
-                                  >
-                                    Delete
-                                  </Button>
-                                </Flex>
-                              )}
+                              <input
+                                type="checkbox"
+                                checked={selectedItems.includes(albumTitle.id)}
+                                onChange={() => toggleItemSelection(albumTitle.id)}
+                              />
                             </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={bulkDeleteMode ? "5" : "4"} style={{ textAlign: 'center', padding: '1rem' }}>
-                            No records found
+                          )}
+                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                            {editingId === albumTitle.id ? (
+                              <TextField
+                                value={editForm.name}
+                                onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                placeholder="Artist/Band Name"
+                                variation="quiet"
+                                required
+                              />
+                            ) : (
+                              albumTitle.name
+                            )}
+                          </td>
+                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', fontStyle: 'italic', textAlign: 'left' }}>
+                            {editingId === albumTitle.id ? (
+                              <TextField
+                                value={editForm.title}
+                                onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                                placeholder="Album Title"
+                                variation="quiet"
+                                required
+                              />
+                            ) : (
+                              albumTitle.title
+                            )}
+                          </td>
+                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'left' }}>
+                            {editingId === albumTitle.id ? (
+                              <TextField
+                                value={editForm.notes}
+                                onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                                placeholder="Notes"
+                                variation="quiet"
+                              />
+                            ) : (
+                              albumTitle.notes
+                            )}
+                          </td>
+                          <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
+                            {editingId === albumTitle.id ? (
+                              <Flex direction="row" gap="1rem" justifyContent="center">
+                                <Button
+                                  variation="primary"
+                                  onClick={() => handleSave(albumTitle.id)}
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  variation="link"
+                                  onClick={handleCancel}
+                                >
+                                  Cancel
+                                </Button>
+                              </Flex>
+                            ) : (
+                              <Flex direction="row" gap="1rem" justifyContent="center">
+                                <Button
+                                  variation="link"
+                                  onClick={() => handleEdit(albumTitle)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variation="destructive"
+                                  onClick={() => deleteAlbumTitle(albumTitle)}
+                                >
+                                  Delete
+                                </Button>
+                              </Flex>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </View>
-              )
-              
-            }
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={bulkDeleteMode ? "5" : "4"} style={{ textAlign: 'center', padding: '1rem' }}>
+                          No records found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </View>
+            )}
+
+
+
             <Button 
               onClick={signOut} 
               style={{ width: 'fit-content', alignSelf: 'center' }}
