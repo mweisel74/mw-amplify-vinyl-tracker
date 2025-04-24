@@ -34,6 +34,7 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);  
   const [editForm, setEditForm] = useState({
     name: '',
     title: '',
@@ -112,41 +113,58 @@ export default function App() {
 //SECTION 4 - Core Functions (Part 2):
 
   const handleBulkDelete = async () => {
-      if (selectedItems.length === 0) {
-        alert('Please select items to delete');
-        return;
+    if (selectedItems.length === 0) {
+      alert('Please select items to delete');
+      return;
+    }
+  
+    const isAllSelected = selectedItems.length === albumTitles.length;
+    const warningMessage = isAllSelected 
+      ? `⚠️ WARNING: You are about to delete ALL ${selectedItems.length} records from your collection. This action is permanent and cannot be undone.\n\nAre you absolutely sure you want to continue?`
+      : `Warning: You are about to delete ${selectedItems.length} record(s). This action is permanent and cannot be undone.\n\nDo you want to continue?`;
+  
+    const confirmDelete = window.confirm(warningMessage);
+  
+    if (confirmDelete) {
+      setIsLoading(true);
+      try {
+        // Delete all selected items
+        await Promise.all(
+          selectedItems.map(id => client.models.AlbumTitle.delete({ id }))
+        );
+        
+        // Update local state by filtering out deleted items
+        setAlbumTitles(prevTitles => 
+          prevTitles.filter(title => !selectedItems.includes(title.id))
+        );
+        
+        // Reset selection states
+        setSelectedItems([]);
+        setSelectAll(false);
+        setBulkDeleteMode(false);
+  
+      } catch (error) {
+        console.error('Error during bulk delete:', error);
+        alert('Some items could not be deleted. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
+    }
+  };
   
-      const confirmDelete = window.confirm(
-        `Warning: You are about to delete ${selectedItems.length} record(s). This action is irreversible. Do you want to continue?`
-      );
   
-      if (confirmDelete) {
-        setIsLoading(true);
-        try {
-          // Delete all selected items
-          await Promise.all(
-            selectedItems.map(id => client.models.AlbumTitle.delete({ id }))
-          );
-          
-          // Update local state by filtering out deleted items
-          setAlbumTitles(prevTitles => 
-            prevTitles.filter(title => !selectedItems.includes(title.id))
-          );
-          
-          // Reset selection state
-          setSelectedItems([]);
-          setBulkDeleteMode(false);
-  
-        } catch (error) {
-          console.error('Error during bulk delete:', error);
-          alert('Some items could not be deleted. Please try again.');
-        } finally {
-          setIsLoading(false);
-        }
+    const handleSelectAll = () => {
+      if (selectAll) {
+        // If already all selected, deselect all
+        setSelectedItems([]);
+      } else {
+        // Select all items
+        const allIds = albumTitles.map(album => album.id);
+        setSelectedItems(allIds);
       }
+      setSelectAll(!selectAll);
     };
-  
+    
 
   async function deleteAlbumTitle({ id }) {
     try {
@@ -394,9 +412,9 @@ export default function App() {
           {/* Content below */}
           <Flex direction="column" gap="2rem" width="100%" maxWidth="800px" margin="0 auto">
             <Divider />
-            <Flex direction="row" alignItems="center" gap="1rem">
-              <Heading level={2}>My Vinyl Wishlist</Heading>
-              <>
+            <Flex direction="row" alignItems="center" gap="1rem" flexWrap="wrap">
+              <Heading level={2} style={{ marginRight: '2rem' }}>My Vinyl Wishlist</Heading>
+              <Flex gap="1rem" alignItems="center">
                 <Button
                   onClick={() => setViewMode(viewMode === 'card' ? 'table' : 'card')}
                   variation="link"
@@ -425,12 +443,13 @@ export default function App() {
                   variation="link"
                   onClick={() => {
                     setBulkDeleteMode(!bulkDeleteMode);
-                    setSelectedItems([]); // Clear selections when toggling mode
+                    setSelectedItems([]);
+                    setSelectAll(false);
                   }}
                 >
-                  {bulkDeleteMode ? 'Cancel Bulk Delete' : 'Bulk Delete'}
+                  {bulkDeleteMode ? '← Exit Bulk Delete' : 'Bulk Delete'}
                 </Button>
-              
+                
                 {bulkDeleteMode && selectedItems.length > 0 && (
                   <Button
                     variation="destructive"
@@ -439,50 +458,104 @@ export default function App() {
                     Delete Selected ({selectedItems.length})
                   </Button>
                 )}
-              </>
+              </Flex>
             </Flex>
-
+          
+            {/* Select All section */}
+            {bulkDeleteMode && (
+              <Flex 
+                direction="column"
+                padding="1rem"
+                backgroundColor="rgba(0, 0, 0, 0.03)"
+                borderRadius="8px"
+                margin="1rem 0"
+                width="100%"
+              >
+                <Flex 
+                  direction="row" 
+                  alignItems="center" 
+                  justifyContent="space-between"
+                  gap="2rem"
+                >
+                  <Flex alignItems="center" gap="1rem">
+                    <label 
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectAll}
+                        onChange={handleSelectAll}
+                      />
+                      <Text fontWeight="bold">Select All Records</Text>
+                    </label>
+                  </Flex>
+                  <Text variation="secondary" style={{ fontSize: '0.9rem' }}>
+                    {selectedItems.length} of {albumTitles.length} records selected
+                  </Text>
+                </Flex>
+                <Text 
+                  variation="secondary" 
+                  style={{ 
+                    fontSize: '0.85rem',
+                    marginTop: '0.5rem' 
+                  }}
+                >
+                  Tip: Select individual records or use "Select All" to delete multiple records at once
+                </Text>
+              </Flex>
+            )}
+          
             {isLoading ? (
               <View textAlign="center" padding="2rem">
                 Loading...
               </View>
             ) : viewMode === 'card' ? (
+              // ... rest of your card view code ...
+          
 
 //SECTION 8 - Return/JSX (Part 3 - Card View):
 
-              <Grid
-                margin="3rem 0"
-                templateColumns="repeat(auto-fill, minmax(250px, 1fr))"
-                gap="2rem"
-                justifyContent="center"
-              >
-                {albumTitles && albumTitles.length > 0 ? (
-                  albumTitles.map((albumTitle) => (
-                    <Flex
-                      key={albumTitle.id || albumTitle.name}
-                      direction="column"
-                      justifyContent="space-between"
-                      alignItems="center"
-                      gap="1rem"
-                      border="1px solid #ccc"
-                      padding="2rem"
-                      borderRadius="5%"
-                      className="box"
-                      style={{
-                        minHeight: '300px',
-                        width: '250px',
-                      }}
-                    >
-                      {bulkDeleteMode && (
-                        <View style={{ alignSelf: 'flex-start' }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.includes(albumTitle.id)}
-                            onChange={() => toggleItemSelection(albumTitle.id)}
-                          />
-                        </View>
-                      )}
-                    
+            <View>
+            {/* Grid of cards */}
+            <Grid
+              margin="3rem 0"
+              templateColumns="repeat(auto-fill, minmax(250px, 1fr))"
+              gap="2rem"
+              justifyContent="center"
+            >
+              {albumTitles && albumTitles.length > 0 ? (
+                albumTitles.map((albumTitle) => (
+                  <Flex
+                    key={albumTitle.id || albumTitle.name}
+                    direction="column"
+                    justifyContent="space-between"
+                    alignItems="center"
+                    gap="1rem"
+                    border="1px solid #ccc"
+                    padding="2rem"
+                    borderRadius="5%"
+                    className="box"
+                    style={{
+                      minHeight: '300px',
+                      width: '250px',
+                    }}
+                  >
+                    {/* Individual checkbox for each card */}
+                    {bulkDeleteMode && (
+                      <View style={{ alignSelf: 'flex-start', marginBottom: '1rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedItems.includes(albumTitle.id)}
+                          onChange={() => toggleItemSelection(albumTitle.id)}
+                        />
+                      </View>
+                    )}
+                  
                       {/* Top section with name */}
                       <View style={{ width: '100%' }}>
                         {editingId === albumTitle.id ? (
@@ -497,7 +570,7 @@ export default function App() {
                           <Heading level={3}>{albumTitle.name}</Heading>
                         )}
                       </View>
-                
+              
                       {/* Middle section with title and notes */}
                       <Flex direction="column" gap="1rem" style={{ width: '100%', flex: 1 }}>
                         {editingId === albumTitle.id ? (
@@ -523,7 +596,7 @@ export default function App() {
                           <Text fontSize="small">{albumTitle.notes || " "}</Text>
                         )}
                       </Flex>
-                
+              
                       {/* Bottom section with buttons */}
                       <Flex 
                         direction="row" 
@@ -574,6 +647,8 @@ export default function App() {
                   </View>
                 )}
               </Grid>
+            </View>
+              
             ) : (
 
 //SECTION 9 - Return/JSX (Part 4 - Table View):
@@ -583,9 +658,14 @@ export default function App() {
                   <thead>
                     <tr>
                       {bulkDeleteMode && (
-                        <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
-                          Select
-                        </th>
+                         <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
+                         <input
+                           type="checkbox"
+                           checked={selectAll}
+                           onChange={handleSelectAll}
+                           aria-label="Select all items"
+                         />
+                       </th>
                       )}
                       <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
                       <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
