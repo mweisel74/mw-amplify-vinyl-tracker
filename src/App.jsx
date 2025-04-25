@@ -34,7 +34,9 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
-  const [selectAll, setSelectAll] = useState(false);  
+  const [selectAll, setSelectAll] = useState(false);
+  const [sortField, setSortField] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc');
   const [editForm, setEditForm] = useState({
     name: '',
     title: '',
@@ -121,7 +123,7 @@ export default function App() {
     const isAllSelected = selectedItems.length === albumTitles.length;
     const warningMessage = isAllSelected 
       ? `⚠️ WARNING: You are about to delete ALL ${selectedItems.length} records from your collection. This action is permanent and cannot be undone.\n\nAre you absolutely sure you want to continue?`
-      : `Warning: You are about to delete ${selectedItems.length} record(s). This action is permanent and cannot be undone.\n\nDo you want to continue?`;
+      : `⚠️ WARNING: You are about to delete ${selectedItems.length} record(s). This action is permanent and cannot be undone.\n\nDo you want to continue?`;
   
     const confirmDelete = window.confirm(warningMessage);
   
@@ -151,8 +153,7 @@ export default function App() {
       }
     }
   };
-  
-  
+
     const handleSelectAll = () => {
       if (selectAll) {
         // If already all selected, deselect all
@@ -165,7 +166,6 @@ export default function App() {
       setSelectAll(!selectAll);
     };
     
-
   async function deleteAlbumTitle({ id }) {
     try {
       setIsLoading(true);
@@ -177,6 +177,34 @@ export default function App() {
       setIsLoading(false);
     }
   }
+
+  //Function to sort
+  const handleSort = (field) => {
+    // If clicking the same field, toggle direction
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // If clicking a new field, set it with ascending direction
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+  
+  // Create a function to get sorted albums
+  const getSortedAlbums = () => {
+    if (!sortField) return albumTitles;
+  
+    return [...albumTitles].sort((a, b) => {
+      let aValue = a[sortField].toLowerCase();
+      let bValue = b[sortField].toLowerCase();
+      
+      if (sortDirection === 'asc') {
+        return aValue.localeCompare(bValue);
+      } else {
+        return bValue.localeCompare(aValue);
+      }
+    });
+  };
 
 //SECTION 5 - Edit/Save Functions and CSV Import:
 
@@ -424,11 +452,13 @@ export default function App() {
                 
                 <label htmlFor="csvInput" style={{ margin: 0 }}>
                   <Button
+                    className="tooltip"
                     variation="link"
                     onClick={() => document.getElementById('csvInput').click()}
                     isLoading={isImporting}
                   >
                     {isImporting ? 'Importing...' : 'Import CSV'}
+                    <span className="tooltip-text">Bulk import via CSV file</span>
                   </Button>
                 </label>
                 <input
@@ -440,6 +470,7 @@ export default function App() {
                 />
               
                 <Button
+                  className="tooltip"
                   variation="link"
                   onClick={() => {
                     setBulkDeleteMode(!bulkDeleteMode);
@@ -448,7 +479,11 @@ export default function App() {
                   }}
                 >
                   {bulkDeleteMode ? '← Exit Bulk Delete' : 'Bulk Delete'}
+                  <span className="tooltip-text">
+                    {bulkDeleteMode ? 'Exit bulk delete mode' : 'Enter bulk delete mode'}
+                  </span>
                 </Button>
+                
                 
                 {bulkDeleteMode && selectedItems.length > 0 && (
                   <Button
@@ -514,9 +549,7 @@ export default function App() {
               <View textAlign="center" padding="2rem">
                 Loading...
               </View>
-            ) : viewMode === 'card' ? (
-              // ... rest of your card view code ...
-          
+            ) : viewMode === 'card' ? (          
 
 //SECTION 8 - Return/JSX (Part 3 - Card View):
 
@@ -655,10 +688,10 @@ export default function App() {
 
               <View width="100%" margin="3rem 0">
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {bulkDeleteMode && (
-                         <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
+                 <thead>
+                   <tr>
+                     {bulkDeleteMode && (
+                       <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>
                          <input
                            type="checkbox"
                            checked={selectAll}
@@ -666,16 +699,46 @@ export default function App() {
                            aria-label="Select all items"
                          />
                        </th>
-                      )}
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Artist/Band Name</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Album Title</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
-                      <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
-                    </tr>
-                  </thead>
+                     )}
+                     <th 
+                       className="tooltip"
+                       style={{ 
+                         padding: '1rem', 
+                         borderBottom: '2px solid #ccc', 
+                         textAlign: 'left',
+                         cursor: 'pointer', 
+                         userSelect: 'none',
+                         whiteSpace: 'nowrap'
+                       }}
+                       onClick={() => handleSort('name')}
+                     >
+                       Artist/Band Name<span style={{ marginLeft: '4px' }}>{sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                       <span className="tooltip-text">Click to sort by Artist/Band Name</span>
+                     </th>
+                     <th 
+                       className="tooltip"
+                       style={{ 
+                         padding: '1rem', 
+                         borderBottom: '2px solid #ccc', 
+                         textAlign: 'left',
+                         cursor: 'pointer', 
+                         userSelect: 'none',
+                         whiteSpace: 'nowrap'
+                       }}
+                       onClick={() => handleSort('title')}
+                     >
+                       Album Title<span style={{ marginLeft: '4px' }}>{sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}</span>
+                       <span className="tooltip-text">Click to sort by Album Title</span>
+                     </th>
+                     <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'left' }}>Notes</th>
+                     <th style={{ padding: '1rem', borderBottom: '2px solid #ccc', textAlign: 'center' }}>Actions</th>
+                   </tr>
+                 </thead>
+                 
+
                   <tbody>
-                    {albumTitles && albumTitles.length > 0 ? (
-                      albumTitles.map((albumTitle) => (
+                    {getSortedAlbums() && getSortedAlbums().length > 0 ? (
+                      getSortedAlbums().map((albumTitle) => (
                         <tr key={albumTitle.id || albumTitle.name}>
                           {bulkDeleteMode && (
                             <td style={{ padding: '1rem', borderBottom: '1px solid #eee', textAlign: 'center' }}>
@@ -770,9 +833,6 @@ export default function App() {
                 </table>
               </View>
             )}
-
-
-
             <Button 
               onClick={signOut} 
               style={{ width: 'fit-content', alignSelf: 'center' }}
